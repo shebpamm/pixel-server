@@ -2,6 +2,7 @@ import json, time, traceback, platform, uuid
 import paho.mqtt.client as mqtt
 from jsonsocket import Client as jsonclient
 
+
 namespace = uuid.UUID('3e76db36-6c8c-4d56-a80b-ad4a8683de30')
 localclient = jsonclient()
 
