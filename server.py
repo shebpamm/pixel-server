@@ -244,7 +244,7 @@ if __name__ == '__main__':
         window : 3,
         bedlamp : 4
     """
-    strips =[wsLED(1, 30, connection), wsLED(2, 40, connection), wsLED(3, 37, connection),  wsLED(5, 41, connection),  wsLED(6, 33, connection)]
+    strips =[wsLED(1, 30, connection), wsLED(2, 40, connection), wsLED(3, 37, connection), wsLED(5, 41, connection),  wsLED(6, 33, connection), wsLED(4, 64, connection)]
     """for x in strips:
         print(x)
         x.run()"""
