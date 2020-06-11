@@ -2,6 +2,8 @@ import json, time, traceback, platform, uuid
 import paho.mqtt.client as mqtt
 from jsonsocket import Client as jsonclient
 
+import colortools as ct
+
 
 namespace = uuid.UUID('3e76db36-6c8c-4d56-a80b-ad4a8683de30')
 localclient = jsonclient()
@@ -56,7 +58,7 @@ def ledOn(device):
     """for i in range(64*devIndex, 64*(devIndex+1)):
         raw_pixels[i] = color_pixels[i]"""
     states[device]['state'] = "ON"
-    sendPacket('{"type":"state", "channel": ' + str(devices[device]) + ', "state" : "on"}')
+    print(sendPacket('{"type":"state", "channel": ' + str(devices[device]) + ', "state" : "on"}'))
 
 def setLedState(device, state):
     ledOn(device) if state else ledOff(device)
@@ -70,6 +72,15 @@ def setPixelColors(device, rgb_dict):
 
         states[device]['color'] = rgb_dict
         #print(states)
+        client.publish("{0}/{1}/state".format(platform.node(), device), json.dumps(states[device]), retain=True)
+
+def setPixelTemp(device, temp):
+        kelvin = 1000000/temp # original value is mired so convert to kelvin
+        rgb = ct.K_to_RGB(kelvin)
+        packet = '{"type":"fill", "channel": ' + str(devices[device]) + ', "color" : "' + str(RGB_to_hex(rgb)) + '"}'
+        sendPacket(packet)
+
+        states[device]['temp'] = temp
         client.publish("{0}/{1}/state".format(platform.node(), device), json.dumps(states[device]), retain=True)
 
 def setPixelBrightness(device, bright):
@@ -103,6 +114,7 @@ def publishDiscovery():
                 "schema": "json",
                 "brightness": True,
                 "rgb" : True,
+		"color_temp" : True,
                 "device" : {
                     "identifiers" : [
                         str(uuid.uuid3(namespace, format(platform.node())))
@@ -136,6 +148,8 @@ def on_message(client, userdata, msg):
             setPixelBrightness(device, payload['brightness'])
         if "color" in payload:
             setPixelColors(device, payload['color'])
+	if "color_temp" in payload:
+	    setPixelTemp(device, payload['color_temp'])
 
     except Exception:
         print(traceback.format_exc())
