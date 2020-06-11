@@ -1,3 +1,4 @@
+from __future__ import division
 import fastopc as opc
 import time, os, sys, traceback
 import numpy as np
@@ -5,13 +6,22 @@ import numpy as np
 import colortools as ct
 import threading
 import jsonsocket, json
+from enum import Enum
 from websocket_server import WebsocketServer
 
 
 connection = opc.FastOPC()
 
+class Effect(Enum):
+    NONE = 'none'
+    BREATHE = "breathe"
+    GRADIENT = "gradient"
+    RAINBOW = "rainbow"
+    RAINBOW_GRADIENT = "rainbow_gradient"
+    CYANIZE = "cyanize"
+
 class wsLED:
-    def __init__(self, channel, length, controller, speed=1, step=1):
+    def __init__(self, channel, length, controller, speed=2, step=5):
         self.channel = channel
         self.length = length
         self.controller = controller
@@ -24,7 +34,6 @@ class wsLED:
         self.blackPixels = np.array([ [0,0,0] ] * 64)
         self.brightlevel = 100
         self.isOn = False
-
 
     def setOverride(self, state):
 
@@ -48,6 +57,14 @@ class wsLED:
             self.lightOff()
         else: print("Channel {0}: Invalid state".format(self.channel))
 
+    def setEffect(self, effect):
+        if effect == 'cyanize':
+            self.gradientPixels('37D5D6', 'ff00e8')
+        if effect == 'rainbow':
+            self.rainbowPixels()
+        if effect == 'pastel-rainbow':
+            self.rainbowPixels(saturation=0.4)
+
     def fillPixels(self, hex):
         #Actually RBG LOL :D
         rgb = ct.hex_to_RGB(hex)
@@ -64,7 +81,7 @@ class wsLED:
                 self.targetPixels[i] = rgb
             #leds.put_pixels(self.realPixels, channel=self.channel)
 
-    def gradientPixels(self, start_hex, end_hex, phase):
+    def gradientPixels(self, start_hex, end_hex, phase=0):
         self.lightOn()
         self.targetPixels = ct.phase(ct.linear_gradient(self.targetPixels, start_hex, self.length, end_hex), phase)
 
@@ -72,9 +89,9 @@ class wsLED:
         self.lightOn()
         self.targetPixels = ct.triplecolor(self.targetPixels, colors, self.length)
 
-    def rainbowPixels(self, phase):
+    def rainbowPixels(self, phase=0, saturation=1):
         self.lightOn()
-        self.targetPixels = ct.rainbow(self.targetPixels, phase, self.length)
+        self.targetPixels = ct.rainbow(self.targetPixels, phase, self.length, saturation=saturation)
 
     def brightness(self, bright):
 
@@ -88,6 +105,8 @@ class wsLED:
                 hsv = ct.RGB_to_HSV(self.targetPixels[i])
                 self.targetPixels[i] = ct.HSV_to_RGB((hsv[0], hsv[1], bright/100.0))
 
+
+
     def run(self):
         self.running = True
         self.interpolating = True
@@ -98,14 +117,13 @@ class wsLED:
     def interpolate(self):
         while self.running:
             if self.interpolating:
+
+                processedPixels = self.targetPixels if self.isOn else self.blackPixels
+
                 for i in range(0, self.length):
                     for c in range(0, 3):
 
-                        if not self.isOn:
-                            targetcolor = self.blackPixels[i][c]
-
-                        else:
-                            targetcolor = self.targetPixels[i][c]
+                        targetcolor = processedPixels[i][c]
 
                         realcolor = self.realPixels[i][c]
 
@@ -118,8 +136,9 @@ class wsLED:
                     #print(self.targetPixels[i])
                     #print(self.realPixels[i])
 
+
                 self.controller.putPixels(self.channel, self.realPixels)
-            time.sleep(0.00392156862*self.speed)
+            time.sleep(0.01*self.speed)
 
 #TCP Stack
 
@@ -162,6 +181,10 @@ def handlePacket(data):
             strips[data['channel']].setOverride(data['state'])
             return True
 
+        if commandType == 'effect':
+            #{"type":"effect", "channel":1, "effect" : "breathe"}
+            strips[data['channel']].setEffect(data['effect'])
+
         if commandType == 'query':
             #{"type":"query", "channel":1, "full" : false}
 
@@ -173,7 +196,9 @@ def handlePacket(data):
                     "self.step" : strips[data['channel']].step,
                     "self.interpolating" : strips[data['channel']].interpolating,
                     "self.brightlevel" : strips[data['channel']].brightlevel,
-                    "self.isOn" : strips[data['channel']].isOn
+                    "self.isOn" : strips[data['channel']].isOn,
+                    "self.effect" : str(strips[data['channel']].effect),
+                    "self.effectLoopCount" : strips[data['channel']].effectLoopCount
                 }
             else:
                 return {
@@ -186,7 +211,10 @@ def handlePacket(data):
                     "self.realPixels" : strips[data['channel']].realPixels.tolist(),
                     "self.blackPixels" : strips[data['channel']].blackPixels.tolist(),
                     "self.brightlevel" : strips[data['channel']].brightlevel,
-                    "self.isOn" : strips[data['channel']].isOn
+                    "self.isOn" : strips[data['channel']].isOn,
+                    "self.effect" : str(strips[data['channel']].effect),
+                    "self.effectLoopCount" : strips[data['channel']].effectLoopCount,
+                    "self.effectLoopCountMax" : strips[data['channel']].effectLoopCountMax
                 }
 
     except Exception as e:
@@ -197,7 +225,7 @@ def serveTCP(port=8989):
 
     host = '127.0.0.1'
 
-
+    global server
     server = jsonsocket.Server(host, port)
 
     while True:
@@ -260,14 +288,15 @@ if __name__ == '__main__':
     wsThread.daemon = True
     wsThread.start()
 
-    wsThread.join()
+    #wsThread.join()
 
-    while False:
+    while True:
         i = raw_input(": ")
 
         if i == "r" or i == "restart" or i == "reload":
             os.execl(sys.executable, sys.executable, *sys.argv)
         if i == "e" or i == "exit" or i == "quit" or i == "q":
+            server.close()
             break
 
     #while True:

@@ -5,14 +5,14 @@ import numpy as np
 import colorsys
 
 def K_to_RGB(colour_temperature):
-    if colour_temperature < 1000: 
+    if colour_temperature < 1000:
         colour_temperature = 1000
     elif colour_temperature > 40000:
         colour_temperature = 40000
-    
+
     tmp_internal = colour_temperature / 100.0
-    
-    # red 
+
+    # red
     if tmp_internal <= 66:
         red = 255
     else:
@@ -23,7 +23,7 @@ def K_to_RGB(colour_temperature):
             red = 255
         else:
             red = tmp_red
-    
+
     # green
     if tmp_internal <=66:
         tmp_green = 99.4708025861 * math.log(tmp_internal) - 161.1195681661
@@ -41,7 +41,7 @@ def K_to_RGB(colour_temperature):
             green = 255
         else:
             green = tmp_green
-    
+
     # blue
     if tmp_internal >=66:
         blue = 255
@@ -55,7 +55,7 @@ def K_to_RGB(colour_temperature):
             blue = 255
         else:
             blue = tmp_blue
-    
+
     return [red, green, blue]
 
 
@@ -84,12 +84,13 @@ def HSV_to_RGB(HSV):
 def phase(px, phase):
     return np.moveaxis(px, phase, 0)
 
-def linear_gradient(RGB_list, start_hex, n, finish_hex="FFFFFF", list_offset=0):
+def linear_gradient(pixels, start_hex, n, finish_hex="FFFFFF", list_offset=0):
   ''' returns a gradient list of (n) colors between
     two hex colors. start_hex and finish_hex
     should be the full six-digit color string,
     inlcuding the number sign ("FFFFFF") '''
   # Starting and ending colors in RGB form
+  RGB_list = np.empty_like(pixels)
   s = hex_to_RGB(start_hex)
   f = hex_to_RGB(finish_hex)
   # Initilize a list of the output colors with the starting color
@@ -106,7 +107,7 @@ def linear_gradient(RGB_list, start_hex, n, finish_hex="FFFFFF", list_offset=0):
 def multi_gradient(px, colors, n):
     s = int(float(n)/len(colors))
     for x in range(0, len(colors)-2):
-        linear_gradient(px, colors[x], colors[x+1], s, (s*x)-5)
+        px = linear_gradient(px, colors[x], colors[x+1], s, (s*x)-5)
 
 def triplecolor(px, colors, n):
     colorone = hex_to_RGB(colors[0])
@@ -128,7 +129,7 @@ def triplecolor(px, colors, n):
     return px
 
 
-def rainbow(px, phase, n):
+def rainbow(px, phase, n, saturation=1):
 
     for i in range(0, n):
         hue = i*(1.0/n)
@@ -137,7 +138,7 @@ def rainbow(px, phase, n):
         if hue > 1:
             hue -= 1
 
-        px[i] = HSV_to_RGB([hue, 1, 1])
+        px[i] = HSV_to_RGB([hue, saturation, 1])
 
     return px
 

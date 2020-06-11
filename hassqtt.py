@@ -58,7 +58,7 @@ def ledOn(device):
     """for i in range(64*devIndex, 64*(devIndex+1)):
         raw_pixels[i] = color_pixels[i]"""
     states[device]['state'] = "ON"
-    print(sendPacket('{"type":"state", "channel": ' + str(devices[device]) + ', "state" : "on"}'))
+    sendPacket('{"type":"state", "channel": ' + str(devices[device]) + ', "state" : "on"}')
 
 def setLedState(device, state):
     ledOn(device) if state else ledOff(device)
@@ -90,6 +90,13 @@ def setPixelBrightness(device, bright):
     states[device]['brightness'] = bright
     client.publish("{0}/{1}/state".format(platform.node(), device), json.dumps(states[device]), retain=True)
 
+def setEffect(device, effect):
+    print(device, effect)
+    packet = '{"type":"effect", "channel": ' + str(devices[device]) + ', "effect" : "' + str(effect) + '"}'
+    sendPacket(packet)
+
+    states[device]['effect'] = effect
+    client.publish("{0}/{1}/state".format(platform.node(), device), json.dumps(states[device]), retain=True)
 
 def loadConfig(cfg="config.json"):
     global config, devices, states
@@ -114,13 +121,20 @@ def publishDiscovery():
                 "schema": "json",
                 "brightness": True,
                 "rgb" : True,
-		"color_temp" : True,
+		        "color_temp" : True,
                 "device" : {
                     "identifiers" : [
                         str(uuid.uuid3(namespace, format(platform.node())))
                     ],
                     "name" : "Fadecandy {}".format(platform.node())
-                }
+                },
+                "effect": True,
+                "effect_list" : [
+                    "none",
+                    "cyanize",
+                    "rainbow",
+                    "pastel-rainbow",
+                ]
             }
 
             client.subscribe("{0}/{1}/set".format(platform.node(), device))
@@ -148,8 +162,10 @@ def on_message(client, userdata, msg):
             setPixelBrightness(device, payload['brightness'])
         if "color" in payload:
             setPixelColors(device, payload['color'])
-	if "color_temp" in payload:
-	    setPixelTemp(device, payload['color_temp'])
+    	if "color_temp" in payload:
+    	    setPixelTemp(device, payload['color_temp'])
+        if "effect" in payload:
+            setEffect(device, payload['effect'])
 
     except Exception:
         print(traceback.format_exc())
