@@ -98,6 +98,12 @@ def setEffect(device, effect):
     states[device]['effect'] = effect
     client.publish("{0}/{1}/state".format(platform.node(), device), json.dumps(states[device]), retain=True)
 
+def sendCustomPacket(device, packet):
+    if "channel" not in packet:
+        packet['channel'] = devices[device]
+    sendPacket(json.dumps(packet))
+    print(json.dumps(packet))
+
 def loadConfig(cfg="config.json"):
     global config, devices, states
 
@@ -134,6 +140,7 @@ def publishDiscovery():
                     "cyanize",
                     "rainbow",
                     "pastel-rainbow",
+                    "beach"
                 ]
             }
 
@@ -166,6 +173,8 @@ def on_message(client, userdata, msg):
     	    setPixelTemp(device, payload['color_temp'])
         if "effect" in payload:
             setEffect(device, payload['effect'])
+        if "packet" in payload:
+            sendCustomPacket(device, payload['packet'])
 
     except Exception:
         print(traceback.format_exc())

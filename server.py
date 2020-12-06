@@ -6,6 +6,7 @@ import numpy as np
 import colortools as ct
 import threading
 import jsonsocket, json
+from timeit import default_timer as timer
 from enum import Enum
 from websocket_server import WebsocketServer
 
@@ -20,20 +21,33 @@ class Effect(Enum):
     RAINBOW_GRADIENT = "rainbow_gradient"
     CYANIZE = "cyanize"
 
+class Anim(Enum):
+    NONE = 'none'
+    BREATHE = 'breathe'
+    ROLL = 'roll'
+
 class wsLED:
-    def __init__(self, channel, length, controller, speed=2, step=5):
+    def __init__(self, channel, length, controller, speed=5, step=10):
         self.channel = channel
         self.length = length
         self.controller = controller
+        self.transitionSpeed = speed
+        self.animationSpeed = speed/4
         self.speed = speed
         self.step = step
         self.running = False
         self.interpolating = False
-        self.targetPixels = np.array([ [0,0,0] ] * 64)
-        self.realPixels = np.array([ [0,0,0] ] * 64)
-        self.blackPixels = np.array([ [0,0,0] ] * 64)
+        self.targetPixels = np.array([ [0,0,0] ] * length)
+        self.targetAnimPixels = np.array([ [0,0,0] ] * length)
+        self.realPixels = np.array([ [0,0,0] ] * length)
+        self.blackPixels = np.array([ [0,0,0] ] * length)
         self.brightlevel = 100
         self.isOn = False
+
+        self.isAnimating = False
+        self.animCycle = 0
+        self.animMaxCycle = 1000
+        self.animation = Anim.NONE
 
     def setOverride(self, state):
 
@@ -45,9 +59,11 @@ class wsLED:
             self.interpolating = True
 
     def lightOn(self):
+        self.disableAnimation()
         self.isOn = True
 
     def lightOff(self):
+        self.disableAnimation()
         self.isOn = False
 
     def setState(self, state):
@@ -60,12 +76,31 @@ class wsLED:
     def setEffect(self, effect):
         if effect == 'cyanize':
             self.gradientPixels('37D5D6', 'ff00e8')
+        if effect == 'beach':
+            self.gradientPixels('4db6ac', 'ffb74d')
         if effect == 'rainbow':
             self.rainbowPixels()
         if effect == 'pastel-rainbow':
             self.rainbowPixels(saturation=0.4)
+        if effect == 'rolling':
+            self.setAnimation(Anim.ROLL)
+        if effect == 'breathing':
+            self.setAnimation(Anim.BREATHE)
+        if effect == 'none':
+            self.disableAnimation()
+
+    def setAnimation(self, animation):
+        self.isAnimating = True
+        self.animation = animation
+        self.speed = self.animationSpeed
+
+    def disableAnimation(self):
+        self.isAnimating = False
+        self.animation = Anim.NONE
+        self.speed = self.transitionSpeed
 
     def fillPixels(self, hex):
+        self.disableAnimation()
         #Actually RBG LOL :D
         rgb = ct.hex_to_RGB(hex)
         #print(hex)
@@ -82,18 +117,22 @@ class wsLED:
             #leds.put_pixels(self.realPixels, channel=self.channel)
 
     def gradientPixels(self, start_hex, end_hex, phase=0):
+        self.disableAnimation()
         self.lightOn()
         self.targetPixels = ct.phase(ct.linear_gradient(self.targetPixels, start_hex, self.length, end_hex), phase)
 
     def triplePixels(self, colors):
+        self.disableAnimation()
         self.lightOn()
         self.targetPixels = ct.triplecolor(self.targetPixels, colors, self.length)
 
     def rainbowPixels(self, phase=0, saturation=1):
+        self.disableAnimation()
         self.lightOn()
         self.targetPixels = ct.rainbow(self.targetPixels, phase, self.length, saturation=saturation)
 
     def brightness(self, bright):
+        self.disableAnimation()
 
         if bright == 0:
             self.lightOff()
@@ -114,31 +153,43 @@ class wsLED:
         self.thread.daemon = True
         self.thread.start()
 
+    def preProcessAnimations(self):
+        if self.isAnimating:
+            if self.animation == Anim.ROLL:
+                self.targetPixels = np.roll(self.targetPixels, 1, axis=0)
+            if self.animation == Anim.BREATHE:
+                pass
+
+
+    def process(self):
+        processedPixels = self.targetPixels if self.isOn else self.blackPixels
+
+        diff = processedPixels - self.realPixels
+        self.realPixels = self.realPixels + self.step*np.divide(diff, np.abs(diff), out=np.zeros_like(diff), where=np.abs(diff)>=self.step )
+
+
     def interpolate(self):
+        stats = []
         while self.running:
             if self.interpolating:
 
-                processedPixels = self.targetPixels if self.isOn else self.blackPixels
+                start = timer()
+                self.animCycle += 1
 
-                for i in range(0, self.length):
-                    for c in range(0, 3):
+                self.preProcessAnimations()
+                self.process()
 
-                        targetcolor = processedPixels[i][c]
-
-                        realcolor = self.realPixels[i][c]
-
-                        if realcolor > targetcolor and realcolor-targetcolor >= self.step:
-                                self.realPixels[i][c] -= self.step
-                        elif realcolor < targetcolor  and targetcolor-realcolor >= self.step:
-                                self.realPixels[i][c] += self.step
-
-            #    if i == 1:
-                    #print(self.targetPixels[i])
-                    #print(self.realPixels[i])
-
+                if self.animCycle == self.animMaxCycle:
+                    self.animCycle = 0
 
                 self.controller.putPixels(self.channel, self.realPixels)
-            time.sleep(0.01*self.speed)
+
+                end = timer()
+
+                stats.append(end - start)
+                if(len(stats) == 500):
+                    print(sum(stats) / 500)
+            time.sleep(0.1/self.speed)
 
 #TCP Stack
 
@@ -272,7 +323,7 @@ if __name__ == '__main__':
         window : 3,
         bedlamp : 4
     """
-    strips =[wsLED(1, 30, connection), wsLED(2, 40, connection), wsLED(3, 37, connection), wsLED(5, 41, connection),  wsLED(6, 33, connection), wsLED(4, 64, connection)]
+    strips =[wsLED(1, 30, connection), wsLED(2, 40, connection), wsLED(3, 37, connection), wsLED(5, 56, connection),  wsLED(6, 33, connection), wsLED(4, 56, connection)]
     """for x in strips:
         print(x)
         x.run()"""
@@ -288,8 +339,8 @@ if __name__ == '__main__':
     wsThread.daemon = True
     wsThread.start()
 
-    #wsThread.join()
-
+    wsThread.join()
+"""
     while True:
         i = raw_input(": ")
 
@@ -298,7 +349,7 @@ if __name__ == '__main__':
         if i == "e" or i == "exit" or i == "quit" or i == "q":
             server.close()
             break
-
+"""
     #while True:
     #    idx, hex = raw_input("Set:").split('.')
     #    strips[int(idx)].fillPixels(hex)
